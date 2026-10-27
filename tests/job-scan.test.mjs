@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import ts from 'typescript';
+const js=ts.transpileModule(readFileSync('lib/job-scan.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
+const {extractJob,extractText,publicURL}=await import('data:text/javascript;base64,'+Buffer.from(js).toString('base64'));
+const page=j=>`<script type="application/ld+json">${JSON.stringify(j).replaceAll('<', '\\u003c')}</script>`;
+const job={'@type':'JobPosting',title:'Data &amp; Insights Analyst',hiringOrganization:{name:'Example Co'},description:'<p>Analyse data</p><script>bad()</script>',jobLocation:{address:{addressLocality:'Jakarta',addressCountry:'ID'}},baseSalary:{currency:'IDR',value:{minValue:8000000,maxValue:10000000,unitText:'MONTH'}}};
+const r=extractJob(page({'@graph':[job]}),'https://example.com/job');assert.equal(r.role,'Data & Insights Analyst');assert.equal(r.company,'Example Co');assert.match(r.notes,/Jakarta, ID/);assert.match(r.notes,/8000000 – 10000000 MONTH/);assert.ok(!r.notes.includes('bad()'));
+assert.equal(extractJob(page([job,{...job,title:'Another'}]),'https://example.com/jobs').role,'');
+assert.equal(extractJob('<title>Job Application for Analyst at Example Co</title>','https://example.com/job').company,'Example Co');
+assert.equal(extractJob('<title>Sign in | Jobs</title>','https://example.com/job').role,'');
+assert.equal(extractJob('<script type="application/ld+json">broken</script>','https://example.com/job').role,'');
+assert.equal(extractText('Company: Grab\nJob title: Product Analyst\nDetails').company,'Grab');
+assert.equal(extractText('Unlabelled description').role,'');
+for(const u of ['http://127.0.0.1/','http://2130706433/','http://[::1]/','http://localhost/','file:///etc/passwd','https://user:pass@example.com','http://a.internal/','http://example.com:8080'])assert.throws(()=>publicURL(u));
+assert.equal(publicURL('https://example.com/job#apply').href,'https://example.com/job');
+console.log('PASS: structured data, nested graphs, multiple-listing safety, metadata fallback, blocked pages, malformed JSON, pasted text, public URL guards');
